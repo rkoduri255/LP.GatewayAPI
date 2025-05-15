@@ -38,8 +38,7 @@ namespace LP.GatewayAPI.Middlewares
                 return;
             }
 
-            try
-            {
+           
                 // Decrypt the lp-auth-token
                 Cryptography cryptography = new Cryptography();
                 string dAccessToken = cryptography.DecryptToken(lpToken);
@@ -52,14 +51,7 @@ namespace LP.GatewayAPI.Middlewares
                 context.Request.Headers.Add("api-auth-key", lpToken);
 
                 // Proceed with the request
-                await _next(context);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Authentication failed.");
-                context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
-                await context.Response.WriteAsync("Authentication failed.");
-            }
+                await _next(context);           
         }
     }
 }
