@@ -5,15 +5,7 @@
       "Routes": [
         {
           "Path": "/selfstudy-reports",
-          "UpstreamPathTemplate": "/selfstudy-reports/{everything}",
-          "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
-          "DownstreamPathTemplate": "{everything}",
-          "DownstreamScheme": "https",
-          "DownstreamHostAndPorts": [
-            {
-              "Host": "lp-qa-in.zeqo.com/api/selfstudy-reports"
-            }
-          ]        
+          "apiUri": "https://lp-qa-in.zeqo.com/api/selfstudy-reports"          
         }
       ]
     }
@@ -21,13 +13,10 @@
   "DefaultRoutes": [
     {
       "Path": "/selfstudy-reports",
-      "UpstreamPathTemplate": "/selfstudy-reports/{everything}",
-      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
-      "DownstreamPathTemplate": "{everything}",
-      "DownstreamScheme": "https",
-      "DownstreamHostAndPorts": [
+      "Routes": [
         {
-          "Host": "lp-qa-in.zeqo.com/api/selfstudy-reports"
+          "Path": "/selfstudy-reports",
+          "apiUri": "https://lp-qa-in.zeqo.com/api/selfstudy-reports"
         }
       ]
     }

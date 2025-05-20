@@ -38,20 +38,20 @@ namespace LP.GatewayAPI.Middlewares
                 return;
             }
 
-           
-                // Decrypt the lp-auth-token
-                Cryptography cryptography = new Cryptography();
-                string dAccessToken = cryptography.DecryptToken(lpToken);
-                dynamic token = JsonConvert.DeserializeObject(dAccessToken);
 
-                // Set the Access Token in headers (Stripping 'Bearer ' prefix)
-                string extractedToken = eAccessToken.Substring("Bearer ".Length);
-                context.Items["AccessToken"] = extractedToken;
-                context.Request.Headers.Remove("api-auth-key");
-                context.Request.Headers.Add("api-auth-key", lpToken);
+            // Decrypt the lp-auth-token
+            Cryptography cryptography = new Cryptography();
+            string dAccessToken = cryptography.DecryptToken(lpToken);
+            dynamic token = JsonConvert.DeserializeObject(dAccessToken);
 
-                // Proceed with the request
-                await _next(context);           
+            // Set the Access Token in headers (Stripping 'Bearer ' prefix)
+            string extractedToken = eAccessToken.Substring("Bearer ".Length);
+            context.Items["AccessToken"] = extractedToken;
+            context.Request.Headers.Remove("api-auth-key");
+            context.Request.Headers.Add("api-auth-key", lpToken);
+
+            // Proceed with the request
+            await _next(context);
         }
     }
 }

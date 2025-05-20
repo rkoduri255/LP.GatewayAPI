@@ -47,11 +47,10 @@ namespace LP.GatewayAPI.Middlewares
 
         public async Task Invoke(HttpContext context)
         {
-            var requestPath = context.Request.Path.Value?.ToLower();
-            var method = context.Request.Method.ToUpper();
+            var requestPath = context.Request.Path.Value?.ToLower();           
 
             // Read version from header
-            var version = context.Request.Headers["x-api-version"].FirstOrDefault();
+            var version = context.Request.Headers["version"].FirstOrDefault();
 
             RouteConfig route = null;
 
@@ -65,8 +64,7 @@ namespace LP.GatewayAPI.Middlewares
 #pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
                     route = versionGroup.Routes.FirstOrDefault(r =>
                         requestPath != null &&
-                        requestPath.StartsWith(r.Path, StringComparison.OrdinalIgnoreCase) &&
-                        r.UpstreamHttpMethod.Contains(method)
+                        requestPath.StartsWith(r.Path, StringComparison.OrdinalIgnoreCase)                        
                     );
 #pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
                 }
@@ -78,8 +76,7 @@ namespace LP.GatewayAPI.Middlewares
 #pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
                 route = _defaultRoutes.FirstOrDefault(r =>
                     requestPath != null &&
-                    requestPath.StartsWith(r.Path, StringComparison.OrdinalIgnoreCase) &&
-                    r.UpstreamHttpMethod.Contains(method)
+                    requestPath.StartsWith(r.Path, StringComparison.OrdinalIgnoreCase)                   
                 );
 #pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
             }
@@ -91,18 +88,15 @@ namespace LP.GatewayAPI.Middlewares
                 await context.Response.WriteAsync("Route not found.");
                 return;
             }            
-
-            // Construct target URI
-            var downstreamHost = route.DownstreamHostAndPorts.FirstOrDefault()?.Host;
-            var downstreamPort = route.DownstreamHostAndPorts.FirstOrDefault()?.Port;
+           
             var newRoute = requestPath?.Replace(route.Path, "");
 
             // Form the target URI with or without a port
-            var targetUri = downstreamPort.HasValue
-                ? $"{route.DownstreamScheme}://{downstreamHost}:{downstreamPort}{newRoute}{context.Request.QueryString}"
-                : $"{route.DownstreamScheme}://{downstreamHost}{newRoute}{context.Request.QueryString}";
+            var targetUri = $"{route.ApiUri}{newRoute}{context.Request.QueryString}";
 
             _logger.LogInformation($"Forwarding request to {targetUri}");
+
+            var method = context.Request.Method.ToUpper();
 
             // Handle payload for POST, PUT, PATCH
             string bodyContent = null;
@@ -149,12 +143,8 @@ namespace LP.GatewayAPI.Middlewares
     // Route configuration model
     public class RouteConfig
     {
-        public string Path { get; set; }
-        public string UpstreamPathTemplate { get; set; }
-        public List<string> UpstreamHttpMethod { get; set; }
-        public string DownstreamPathTemplate { get; set; }
-        public string DownstreamScheme { get; set; }
-        public List<HostAndPort> DownstreamHostAndPorts { get; set; }               
+        public string Path { get; set; }             
+        public string ApiUri { get; set; }                             
     }
 
     public class HostAndPort
