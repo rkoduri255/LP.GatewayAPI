@@ -18,24 +18,21 @@ namespace LP.GatewayAPI.Logging
         public void Log(Exception ex, string message)
         {
             var environment = _apiLoggerOptions.Environment;
-            if (environment == null || environment.ToLower() == LOCAL_ENVIRONMENT)
+            if (environment == null || environment.Equals(LOCAL_ENVIRONMENT, StringComparison.CurrentCultureIgnoreCase))
             {
                 return;
             }
 
-            try
-            {
-                Uri uri = new($"{_apiLoggerOptions.APIBaseURL}/add-log");
-                var logItem = CreateLogItem(message, ex?.ToString(), LogLevel.Error, environment);
-                var requestMesage = new HttpRequestMessage(HttpMethod.Post, uri);
-                var stringContent = new StringContent(JsonConvert.SerializeObject(logItem), Encoding.UTF8, "application/json");
-                requestMesage.Content = stringContent;
-                var client = new HttpClient();
-                client.SendAsync(requestMesage).ContinueWith(LogFailedMessages);
-            }
-            catch
-            {
-            }
+            Uri uri = new($"{_apiLoggerOptions.APIBaseURL}/add-log");
+            #pragma warning disable CS8604 // Possible null reference argument.
+            var logItem = CreateLogItem(message, ex?.ToString(), LogLevel.Error, environment);
+            #pragma warning restore CS8604 // Possible null reference argument.
+            var requestMesage = new HttpRequestMessage(HttpMethod.Post, uri);
+            var stringContent = new StringContent(JsonConvert.SerializeObject(logItem), Encoding.UTF8, "application/json");
+            requestMesage.Content = stringContent;
+            var client = new HttpClient();
+            client.SendAsync(requestMesage);
+
         }
 
         /// <summary>
@@ -58,26 +55,6 @@ namespace LP.GatewayAPI.Logging
                 Timestamp = DateTime.Now
             };
             return logMessageEntry;
-        }
-
-        /// <summary>
-        /// This method will log error messages when there is error response from Log API, this can be considered
-        /// as fallback mechanism to make sure that we don't miss logs in any case.
-        /// </summary>
-        /// <param name="task"></param>
-        private void LogFailedMessages(Task<HttpResponseMessage> responseTask)
-        {
-            var response = responseTask.Result;
-            if (response.IsSuccessStatusCode)
-            {
-                return;
-            }
-
-            var message = @$"Failed to push logs to log API. Response statuscode is [{response.StatusCode}] and reason phrase is [{response.ReasonPhrase}]";
-            Console.WriteLine(message);
-            //TODO : Log error messages coming from log API as well
-        }
-
-
+        }        
     }
 }

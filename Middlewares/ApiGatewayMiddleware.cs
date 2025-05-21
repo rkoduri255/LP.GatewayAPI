@@ -10,10 +10,14 @@ namespace LP.GatewayAPI.Middlewares
         private readonly HttpClient _httpClient;               
         private readonly List<RouteConfig> _defaultRoutes;
         private readonly List<VersionedRoutes> _versionedRoutes;
-        private readonly ILogger<IAPILogger> _logger;
+        private readonly IAPILogger _logger;
         private readonly RequestDelegate _next;
 
-        public ApiGatewayMiddleware(RequestDelegate next, ILogger<IAPILogger> logger, IHttpClientFactory httpClientFactory)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ApiGatewayMiddleware"/> class.
+        /// Loads route configuration from routes.json and sets up the HTTP client.
+        /// </summary>
+        public ApiGatewayMiddleware(RequestDelegate next, IAPILogger logger, IHttpClientFactory httpClientFactory)
         {
             _next = next;
             _logger = logger;
@@ -37,11 +41,21 @@ namespace LP.GatewayAPI.Middlewares
         }
 
 
+        /// <summary>
+        /// Disposes the internal HttpClient instance used for forwarding requests.
+        /// </summary>
         public void Dispose()
         {
             _httpClient.Dispose();
-        }
+            GC.SuppressFinalize(this);
+        }        
 
+        /// <summary>
+        /// Main middleware entry point. Matches the incoming request to a configured route,
+        /// constructs the downstream target URI, forwards the request (including payload and headers),
+        /// and copies the downstream response back to the client.
+        /// </summary>
+        /// <param name="context">The current HTTP context.</param>
         public async Task Invoke(HttpContext context)
         {
             var requestPath = context.Request.Path.Value?.ToLower();           
@@ -49,7 +63,7 @@ namespace LP.GatewayAPI.Middlewares
             // Read version from header
             var version = context.Request.Headers["version"].FirstOrDefault();
 
-            RouteConfig route = null;
+            RouteConfig? route = null;
 
             if (!string.IsNullOrEmpty(version))
             {
@@ -68,19 +82,16 @@ namespace LP.GatewayAPI.Middlewares
             }
 
             // If no version or no matching versioned route, use default routes
-            if (route == null)
-            {
-                #pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
-                route = _defaultRoutes.FirstOrDefault(r =>
+            #pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
+            route ??= _defaultRoutes.FirstOrDefault(r =>
                     requestPath != null &&
                     requestPath.StartsWith(r.Path, StringComparison.OrdinalIgnoreCase)                   
                 );
-                #pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
-            }
+            #pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
 
             if (route == null)
             {
-                _logger.LogError($"No matching route found for {requestPath} with version {version}");
+                _logger.Log(new Exception($"No matching route found for {requestPath} with version {version}"), $"No matching route found for {requestPath} with version {version}");
                 context.Response.StatusCode = (int)HttpStatusCode.NotFound;
                 await context.Response.WriteAsync("Route not found.");
                 return;
@@ -93,43 +104,61 @@ namespace LP.GatewayAPI.Middlewares
 
             var method = context.Request.Method.ToUpper();
 
-            // Handle payload for POST, PUT, PATCH
-            string bodyContent = null;
+            // Handle payload for POST, PUT, PATCH           
+            HttpContent? httpContent = null;
             if (method == "POST" || method == "PUT" || method == "PATCH")
             {
                 context.Request.EnableBuffering();
-                using (var reader = new StreamReader(
-                    context.Request.Body,
-                    encoding: Encoding.UTF8,
-                    detectEncodingFromByteOrderMarks: false,
-                    bufferSize: 1024,
-                    leaveOpen: true))
-                {
-                    bodyContent = await reader.ReadToEndAsync();
-                    context.Request.Body.Position = 0;
-                }
+                var memoryStream = new MemoryStream();
+                await context.Request.Body.CopyToAsync(memoryStream);
+                context.Request.Body.Position = 0;
+                memoryStream.Position = 0;
+                httpContent = new StreamContent(memoryStream);
+                if (!string.IsNullOrEmpty(context.Request.ContentType))
+                    httpContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(context.Request.ContentType);
             }
 
-            HttpRequestMessage requestMessage = CreateRequestObject(context.Request, new Uri(targetUri), bodyContent);                      
 
-            // Forward request to target URI
-            var response = await _httpClient.SendAsync(requestMessage);
-            context.Response.StatusCode = (int)response.StatusCode;           
-            await response.Content.CopyToAsync(context.Response.Body);
+            HttpRequestMessage requestMessage = CreateRequestObject(context.Request, new Uri(targetUri), httpContent);
+
+            try
+            {
+                var response = await _httpClient.SendAsync(requestMessage);
+                context.Response.StatusCode = (int)response.StatusCode;
+                await response.Content.CopyToAsync(context.Response.Body);
+
+                if ((int)response.StatusCode >= 500)
+                {
+                    _logger.Log(new Exception($"Downstream service error: {(int)response.StatusCode}"), "Downstream service returned 5xx error.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Log(ex, "Error forwarding request to downstream service.");
+                context.Response.StatusCode = (int)HttpStatusCode.BadGateway;
+                await context.Response.WriteAsync("Error forwarding request.");
+            }
+
         }
 
-        private HttpRequestMessage CreateRequestObject(HttpRequest httpRequest, Uri uri, string content = null)
+        /// <summary>
+        /// Creates an <see cref="HttpRequestMessage"/> for forwarding to the downstream service.
+        /// Copies headers and sets the request content if provided.
+        /// </summary>
+        /// <param name="httpRequest">The incoming HTTP request.</param>
+        /// <param name="uri">The downstream target URI.</param>
+        /// <param name="content">The request body content, if any.</param>
+        /// <returns>A configured <see cref="HttpRequestMessage"/> for forwarding.</returns>
+        private static HttpRequestMessage CreateRequestObject(HttpRequest httpRequest, Uri uri, HttpContent? content = null)
         {
-            HttpRequestMessage request;
-            if (content != null)
-                request = RequestTranscriptHelpers.ToHttpRequestMessage(httpRequest, uri, content);
-            else
-                request = RequestTranscriptHelpers.ToHttpRequestMessage(httpRequest, uri);
-
-            // In case we are forwarding the request to a different host, replace the host header with our destination.
-            request.Headers.Remove("Host");
-            request.Headers.Add("Host", uri.Host);
-            request.Headers.Remove("Origin");
+            HttpRequestMessage request;            
+            request = RequestTranscriptHelpers.ToHttpRequestMessage(httpRequest, uri, content, httpRequest.ContentType);          
+            request.Headers.Host = uri.Host;
+            if (httpRequest.Headers.TryGetValue("Origin", out Microsoft.Extensions.Primitives.StringValues value))
+            {
+                request.Headers.Remove("Origin");
+                request.Headers.Add("Origin", value.ToString());
+            }
             return request;
         }
 
@@ -157,19 +186,12 @@ namespace LP.GatewayAPI.Middlewares
 
     public static class RequestTranscriptHelpers
     {
-        public static HttpRequestMessage ToHttpRequestMessage(this HttpRequest req, Uri path)
+        public static HttpRequestMessage ToHttpRequestMessage(this HttpRequest req, Uri path, HttpContent? content, string? contentType)
             => new HttpRequestMessage()
                 .SetMethod(req)
                 .SetAbsoluteUri(path)
                 .SetHeaders(req)
-                .SetContent(req)
-                .SetContentType(req);
-        public static HttpRequestMessage ToHttpRequestMessage(this HttpRequest req, Uri path, string content)
-            => new HttpRequestMessage()
-                .SetMethod(req)
-                .SetAbsoluteUri(path)
-                .SetHeaders(req)
-                .SetContent(content);
+                .SetContent(content, contentType);
 
         private static HttpRequestMessage SetAbsoluteUri(this HttpRequestMessage msg, Uri path)
             => msg.Set(m => m.RequestUri = path);
@@ -178,16 +200,28 @@ namespace LP.GatewayAPI.Middlewares
             => msg.Set(m => m.Method = new HttpMethod(req.Method));
 
         private static HttpRequestMessage SetHeaders(this HttpRequestMessage msg, HttpRequest req)
-            => req.Headers.Aggregate(msg, (acc, h) => acc.Set(m => m.Headers.TryAddWithoutValidation(h.Key, h.Value.AsEnumerable())));
+        {
+            var excludedHeaders = new[] { "Host", "Content-Length", "Transfer-Encoding" };
+            foreach (var h in req.Headers)
+            {
+                if (!excludedHeaders.Contains(h.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    msg.Headers.TryAddWithoutValidation(h.Key, h.Value.AsEnumerable());
+                }
+            }
+            return msg;
+        }
 
-        private static HttpRequestMessage SetContent(this HttpRequestMessage msg, HttpRequest req)
-            => msg.Set(m => m.Content = new StreamContent(req.Body));
-
-        private static HttpRequestMessage SetContent(this HttpRequestMessage msg, String req)
-            => msg.Set(m => m.Content = new StringContent(req, Encoding.UTF8, "application/json"));
-
-        private static HttpRequestMessage SetContentType(this HttpRequestMessage msg, HttpRequest req)
-            => msg.Set(m => m.Content.Headers.Add("Content-Type", req.ContentType), applyIf: req.Headers.ContainsKey("Content-Type"));
+        private static HttpRequestMessage SetContent(this HttpRequestMessage msg, HttpContent? content, string? contentType = null)
+        {
+            if (content != null)
+            {
+                if (!string.IsNullOrEmpty(contentType))
+                    content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+                msg.Content = content;
+            }
+            return msg;
+        }
 
         private static HttpRequestMessage Set(this HttpRequestMessage msg, Action<HttpRequestMessage> config, bool applyIf = true)
         {
@@ -195,9 +229,7 @@ namespace LP.GatewayAPI.Middlewares
             {
                 config.Invoke(msg);
             }
-
             return msg;
         }
     }
-
 }
