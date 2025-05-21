@@ -1,13 +1,10 @@
+using LP.GatewayAPI.Logging;
 using LP.GatewayAPI.Middlewares;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load API Gateway Routes from appsettings.json
-builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
-
-// Add services to the container.
-
-builder.Services.AddControllers();
+builder.Services.Configure<APILoggerOptions>(builder.Configuration.GetSection("Logging:Options"));
+builder.Services.AddSingleton<IAPILogger, APILogger>();
 // Add an http client to bypass SSL validation issues.
 builder.Services.AddHttpClient("HttpClientWithSSLUntrusted").ConfigurePrimaryHttpMessageHandler(() =>
     new HttpClientHandler

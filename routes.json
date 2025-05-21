@@ -1,22 +1,30 @@
 {
-  "Versions": [
+  "versions": [
     {
-      "Version": "v1",
-      "Routes": [
+      "version": "v1",
+      "routes": [
         {
-          "Path": "/selfstudy-reports",
-          "apiUri": "https://lp-qa-in.zeqo.com/api/selfstudy-reports"          
+          "path": "/self-study-reports",
+          "apiUri": "https://lp-qa-in.zeqo.com/api/selfstudy-reports"
+        },
+        {
+          "path": "/announcements",
+          "apiUri": "https://lp-qa-in.zeqo.com/api/announcements"
         }
       ]
     }
   ],
-  "DefaultRoutes": [
+  "defaultRoutes": [
     {
-      "Path": "/selfstudy-reports",
-      "Routes": [
+      "path": "/self-study-reports",
+      "routes": [
         {
-          "Path": "/selfstudy-reports",
+          "path": "/selfstudy-reports",
           "apiUri": "https://lp-qa-in.zeqo.com/api/selfstudy-reports"
+        },
+        {
+          "path": "/announcements",
+          "apiUri": "https://lp-qa-in.zeqo.com/api/announcements"
         }
       ]
     }

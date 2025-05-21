@@ -1,16 +1,15 @@
-﻿namespace LP.GatewayAPI.Middlewares
-{
-    using Microsoft.AspNetCore.Http;
-    using Microsoft.Extensions.Logging;
-    using System.Net;
-    using System.Text.Json;
+﻿using LP.GatewayAPI.Logging;
+using System.Net;
+using System.Text.Json;
 
+namespace LP.GatewayAPI.Middlewares
+{
     public class ErrorHandlingMiddleware
     {
         private readonly RequestDelegate _next;
-        private readonly ILogger<ErrorHandlingMiddleware> _logger;
+        private readonly IAPILogger _logger;
 
-        public ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandlingMiddleware> logger)
+        public ErrorHandlingMiddleware(RequestDelegate next, IAPILogger logger)
         {
             _next = next;
             _logger = logger;
@@ -24,7 +23,7 @@
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "An unhandled exception occurred.");
+                _logger.Log(ex, ex.Message);
 
                 context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
                 context.Response.ContentType = "application/json";
