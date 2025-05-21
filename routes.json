@@ -10,6 +10,10 @@
         {
           "path": "/announcements",
           "apiUri": "https://lp-qa-in.zeqo.com/api/announcements"
+        },
+        {
+          "path": "/learningplatformservice",
+          "apiUri": "https://lp-qa-in.zeqo.com/api/learningplatformservice"
         }
       ]
     }
@@ -25,6 +29,10 @@
         {
           "path": "/announcements",
           "apiUri": "https://lp-qa-in.zeqo.com/api/announcements"
+        },
+        {
+          "path": "/learningplatformservice",
+          "apiUri": "https://lp-qa-in.zeqo.com/api/learningplatformservice"
         }
       ]
     }

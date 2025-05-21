@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
-using System;
+﻿using LP.GatewayAPI.Logging;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -7,19 +6,18 @@ using System.Text.Json;
 namespace LP.GatewayAPI.Middlewares
 {
     public class ApiGatewayMiddleware : IDisposable
-    {
-        private readonly RequestDelegate _next;
-        private readonly HttpClient _httpClient;
-        private readonly ILogger<ApiGatewayMiddleware> _logger;
-        private readonly List<RouteConfig> _routes;
+    {        
+        private readonly HttpClient _httpClient;               
         private readonly List<RouteConfig> _defaultRoutes;
-        private readonly List<VersionedRoutes> _versionedRoutes;        
+        private readonly List<VersionedRoutes> _versionedRoutes;
+        private readonly ILogger<IAPILogger> _logger;
+        private readonly RequestDelegate _next;
 
-        public ApiGatewayMiddleware(RequestDelegate next, IConfiguration configuration, ILogger<ApiGatewayMiddleware> logger, IHttpClientFactory httpClientFactory)
+        public ApiGatewayMiddleware(RequestDelegate next, ILogger<IAPILogger> logger, IHttpClientFactory httpClientFactory)
         {
             _next = next;
-            _httpClient = httpClientFactory.CreateClient("HttpClientWithSSLUntrusted");
             _logger = logger;
+            _httpClient = httpClientFactory.CreateClient("HttpClientWithSSLUntrusted");           
 
             var routesFilePath = Path.Combine(AppContext.BaseDirectory, "routes.json");
             if (File.Exists(routesFilePath))
@@ -27,14 +25,13 @@ namespace LP.GatewayAPI.Middlewares
                 var json = File.ReadAllText(routesFilePath);
                 var routesRoot = JsonSerializer.Deserialize<VersionedRoutesRoot>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 // Simplify collection initialization for _versionedRoutes and _defaultRoutes
-                _versionedRoutes = routesRoot?.Versions ?? new List<VersionedRoutes>();
-                _defaultRoutes = routesRoot?.DefaultRoutes ?? new List<RouteConfig>();
+                _versionedRoutes = routesRoot?.Versions ?? [];
+                _defaultRoutes = routesRoot?.DefaultRoutes ?? [];
             }
             else
             {
-                _versionedRoutes = new List<VersionedRoutes>();
-                _defaultRoutes = new List<RouteConfig>();
-                _logger.LogWarning("routes.json not found. No routes loaded.");
+                _versionedRoutes = [];
+                _defaultRoutes = [];               
             }
 
         }
@@ -61,29 +58,29 @@ namespace LP.GatewayAPI.Middlewares
                 );
                 if (versionGroup != null)
                 {
-#pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
+                    #pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
                     route = versionGroup.Routes.FirstOrDefault(r =>
                         requestPath != null &&
                         requestPath.StartsWith(r.Path, StringComparison.OrdinalIgnoreCase)                        
                     );
-#pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
+                    #pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
                 }
             }
 
             // If no version or no matching versioned route, use default routes
             if (route == null)
             {
-#pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
+                #pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
                 route = _defaultRoutes.FirstOrDefault(r =>
                     requestPath != null &&
                     requestPath.StartsWith(r.Path, StringComparison.OrdinalIgnoreCase)                   
                 );
-#pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
+                #pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
             }
 
             if (route == null)
             {
-                _logger.LogWarning($"No matching route found for {requestPath} with version {version}");
+                _logger.LogError($"No matching route found for {requestPath} with version {version}");
                 context.Response.StatusCode = (int)HttpStatusCode.NotFound;
                 await context.Response.WriteAsync("Route not found.");
                 return;
@@ -92,9 +89,7 @@ namespace LP.GatewayAPI.Middlewares
             var newRoute = requestPath?.Replace(route.Path, "");
 
             // Form the target URI with or without a port
-            var targetUri = $"{route.ApiUri}{newRoute}{context.Request.QueryString}";
-
-            _logger.LogInformation($"Forwarding request to {targetUri}");
+            var targetUri = $"{route.ApiUri}{newRoute}{context.Request.QueryString}";           
 
             var method = context.Request.Method.ToUpper();
 
@@ -145,13 +140,7 @@ namespace LP.GatewayAPI.Middlewares
     {
         public string Path { get; set; }             
         public string ApiUri { get; set; }                             
-    }
-
-    public class HostAndPort
-    {
-        public string Host { get; set; }
-        public int? Port { get; set; }
-    }
+    }   
 
     public class VersionedRoutesRoot
     {
