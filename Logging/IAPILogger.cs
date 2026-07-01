@@ -1,7 +1,7 @@
-﻿namespace LP.GatewayAPI.Logging
+namespace LP.GatewayAPI.Logging
 {
     public interface IAPILogger
     {
-        void Log(Exception ex, string message);
+        Task LogAsync(Exception ex, string message);
     }
 }

@@ -1,235 +1,159 @@
-﻿using LP.GatewayAPI.Logging;
+using LP.GatewayAPI.Logging;
+using Microsoft.Extensions.Options;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 
 namespace LP.GatewayAPI.Middlewares
 {
-    public class ApiGatewayMiddleware : IDisposable
-    {        
-        private readonly HttpClient _httpClient;               
-        private readonly List<RouteConfig> _defaultRoutes;
-        private readonly List<VersionedRoutes> _versionedRoutes;
-        private readonly IAPILogger _logger;
-        private readonly RequestDelegate _next;
+    public class ApiGatewayMiddleware
+    {
+        // RFC 7230 hop-by-hop headers that must not be forwarded
+        private static readonly HashSet<string> HopByHopHeaders = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Host", "Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
+            "TE", "Trailers", "Transfer-Encoding", "Upgrade", "Content-Length"
+        };
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="ApiGatewayMiddleware"/> class.
-        /// Loads route configuration from routes.json and sets up the HTTP client.
-        /// </summary>
-        public ApiGatewayMiddleware(RequestDelegate next, IAPILogger logger, IHttpClientFactory httpClientFactory)
+        private readonly RequestDelegate _next;
+        private readonly IOptionsMonitor<RoutesRoot> _routesMonitor;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IAPILogger _apiLogger;
+        private readonly ILogger<ApiGatewayMiddleware> _logger;
+        private List<RouteConfig> _sortedRoutes = [];
+
+        public ApiGatewayMiddleware(
+            RequestDelegate next,
+            IOptionsMonitor<RoutesRoot> routesMonitor,
+            IHttpClientFactory httpClientFactory,
+            IAPILogger apiLogger,
+            ILogger<ApiGatewayMiddleware> logger)
         {
             _next = next;
+            _routesMonitor = routesMonitor;
+            _httpClientFactory = httpClientFactory;
+            _apiLogger = apiLogger;
             _logger = logger;
-            _httpClient = httpClientFactory.CreateClient("HttpClientWithSSLUntrusted");           
 
-            var routesFilePath = Path.Combine(AppContext.BaseDirectory, "routes.json");
-            if (File.Exists(routesFilePath))
-            {
-                var json = File.ReadAllText(routesFilePath);
-                var routesRoot = JsonSerializer.Deserialize<VersionedRoutesRoot>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                // Simplify collection initialization for _versionedRoutes and _defaultRoutes
-                _versionedRoutes = routesRoot?.Versions ?? [];
-                _defaultRoutes = routesRoot?.DefaultRoutes ?? [];
-            }
-            else
-            {
-                _versionedRoutes = [];
-                _defaultRoutes = [];               
-            }
-
+            ApplyRoutes(routesMonitor.CurrentValue);
+            routesMonitor.OnChange(ApplyRoutes);
         }
 
-
-        /// <summary>
-        /// Disposes the internal HttpClient instance used for forwarding requests.
-        /// </summary>
-        public void Dispose()
-        {
-            _httpClient.Dispose();
-            GC.SuppressFinalize(this);
-        }        
-
-        /// <summary>
-        /// Main middleware entry point. Matches the incoming request to a configured route,
-        /// constructs the downstream target URI, forwards the request (including payload and headers),
-        /// and copies the downstream response back to the client.
-        /// </summary>
-        /// <param name="context">The current HTTP context.</param>
         public async Task Invoke(HttpContext context)
         {
-            var requestPath = context.Request.Path.Value?.ToLower();           
+            var correlationId = context.Items["CorrelationId"]?.ToString() ?? "-";
+            var requestPath = context.Request.Path.Value?.ToLower();
 
-            // Read version from header
-            var version = context.Request.Headers["version"].FirstOrDefault();
-
-            RouteConfig? route = null;
-
-            if (!string.IsNullOrEmpty(version))
-            {
-                var versionGroup = _versionedRoutes.FirstOrDefault(v =>
-                    v.Version.Equals(version, StringComparison.OrdinalIgnoreCase)
-                );
-                if (versionGroup != null)
-                {
-                    #pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
-                    route = versionGroup.Routes.FirstOrDefault(r =>
-                        requestPath != null &&
-                        requestPath.StartsWith(r.Path, StringComparison.OrdinalIgnoreCase)                        
-                    );
-                    #pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
-                }
-            }
-
-            // If no version or no matching versioned route, use default routes
-            #pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
-            route ??= _defaultRoutes.FirstOrDefault(r =>
-                    requestPath != null &&
-                    requestPath.StartsWith(r.Path, StringComparison.OrdinalIgnoreCase)                   
-                );
-            #pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
+            var route = _sortedRoutes.FirstOrDefault(r =>
+                requestPath?.StartsWith(r.Path, StringComparison.OrdinalIgnoreCase) == true);
 
             if (route == null)
             {
-                _logger.Log(new Exception($"No matching route found for {requestPath} with version {version}"), $"No matching route found for {requestPath} with version {version}");
+                _logger.LogWarning("[{CorrelationId}] No route for {Path}", correlationId, requestPath);
                 context.Response.StatusCode = (int)HttpStatusCode.NotFound;
                 await context.Response.WriteAsync("Route not found.");
                 return;
-            }            
-           
-            var newRoute = requestPath?.Replace(route.Path, "");
-
-            // Form the target URI with or without a port
-            var targetUri = $"{route.ApiUri}{newRoute}{context.Request.QueryString}";           
-
-            var method = context.Request.Method.ToUpper();
-
-            // Handle payload for POST, PUT, PATCH           
-            HttpContent? httpContent = null;
-            if (method == "POST" || method == "PUT" || method == "PATCH")
-            {
-                context.Request.EnableBuffering();
-                var memoryStream = new MemoryStream();
-                await context.Request.Body.CopyToAsync(memoryStream);
-                context.Request.Body.Position = 0;
-                memoryStream.Position = 0;
-                httpContent = new StreamContent(memoryStream);
-                if (!string.IsNullOrEmpty(context.Request.ContentType))
-                    httpContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(context.Request.ContentType);
             }
 
+            var remainingPath = requestPath?[route.Path.Length..] ?? string.Empty;
+            var targetUri = $"{route.ApiUri}/{route.Version}{remainingPath}{context.Request.QueryString}";
+            var method = context.Request.Method.ToUpper();
 
-            HttpRequestMessage requestMessage = CreateRequestObject(context.Request, new Uri(targetUri), httpContent);
+            HttpContent? httpContent = null;
+            if (method is "POST" or "PUT" or "PATCH")
+            {
+                context.Request.EnableBuffering();
+                var ms = new MemoryStream();
+                await context.Request.Body.CopyToAsync(ms, context.RequestAborted);
+                context.Request.Body.Position = 0;
+                ms.Position = 0;
+                httpContent = new StreamContent(ms);
+                if (!string.IsNullOrEmpty(context.Request.ContentType))
+                    httpContent.Headers.ContentType =
+                        new System.Net.Http.Headers.MediaTypeHeaderValue(context.Request.ContentType);
+            }
+
+            var requestMessage = BuildForwardRequest(context.Request, new Uri(targetUri), httpContent);
 
             try
             {
-                var response = await _httpClient.SendAsync(requestMessage);
+                var client = _httpClientFactory.CreateClient("HttpClientWithSSLUntrusted");
+                var response = await client.SendAsync(requestMessage, context.RequestAborted);
+
                 context.Response.StatusCode = (int)response.StatusCode;
-                await response.Content.CopyToAsync(context.Response.Body);
+                foreach (var header in response.Headers)
+                    context.Response.Headers.TryAdd(header.Key, header.Value.ToArray());
+                foreach (var header in response.Content.Headers)
+                    context.Response.Headers.TryAdd(header.Key, header.Value.ToArray());
+
+                await response.Content.CopyToAsync(context.Response.Body, context.RequestAborted);
 
                 if ((int)response.StatusCode >= 500)
                 {
-                    _logger.Log(new Exception($"Downstream service error: {(int)response.StatusCode}"), "Downstream service returned 5xx error.");
+                    var downstreamEx = new Exception($"Downstream {(int)response.StatusCode} from {targetUri}");
+                    await _apiLogger.LogAsync(downstreamEx, "Downstream service returned 5xx error.");
                 }
+            }
+            catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+            {
+                _logger.LogInformation("[{CorrelationId}] Request cancelled by client", correlationId);
             }
             catch (Exception ex)
             {
-                _logger.Log(ex, "Error forwarding request to downstream service.");
+                _logger.LogError(ex, "[{CorrelationId}] Error forwarding to {TargetUri}", correlationId, targetUri);
+                await _apiLogger.LogAsync(ex, "Error forwarding request to downstream service.");
                 context.Response.StatusCode = (int)HttpStatusCode.BadGateway;
                 await context.Response.WriteAsync("Error forwarding request.");
             }
-
         }
 
-        /// <summary>
-        /// Creates an <see cref="HttpRequestMessage"/> for forwarding to the downstream service.
-        /// Copies headers and sets the request content if provided.
-        /// </summary>
-        /// <param name="httpRequest">The incoming HTTP request.</param>
-        /// <param name="uri">The downstream target URI.</param>
-        /// <param name="content">The request body content, if any.</param>
-        /// <returns>A configured <see cref="HttpRequestMessage"/> for forwarding.</returns>
-        private static HttpRequestMessage CreateRequestObject(HttpRequest httpRequest, Uri uri, HttpContent? content = null)
+        private static HttpRequestMessage BuildForwardRequest(HttpRequest httpRequest, Uri uri, HttpContent? content)
         {
-            HttpRequestMessage request;            
-            request = RequestTranscriptHelpers.ToHttpRequestMessage(httpRequest, uri, content, httpRequest.ContentType);          
-            request.Headers.Host = uri.Host;
-            if (httpRequest.Headers.TryGetValue("Origin", out Microsoft.Extensions.Primitives.StringValues value))
+            var message = new HttpRequestMessage(new HttpMethod(httpRequest.Method), uri);
+
+            foreach (var header in httpRequest.Headers)
             {
-                request.Headers.Remove("Origin");
-                request.Headers.Add("Origin", value.ToString());
+                if (!HopByHopHeaders.Contains(header.Key))
+                    message.Headers.TryAddWithoutValidation(header.Key, header.Value.AsEnumerable());
             }
-            return request;
+
+            message.Headers.Host = uri.Host;
+
+            if (content != null)
+                message.Content = content;
+
+            return message;
         }
 
+        private void ApplyRoutes(RoutesRoot routes)
+        {
+            _sortedRoutes = (routes.Routes ?? [])
+                .OrderByDescending(r => r.Path.Length)
+                .ToList();
+
+            ValidateRoutes(routes);
+        }
+
+        private void ValidateRoutes(RoutesRoot routes)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var r in routes.Routes ?? [])
+            {
+                if (!seen.Add(r.Path))
+                    _logger.LogWarning("Ambiguous route detected: '{Path}' is defined more than once", r.Path);
+            }
+        }
     }
 
-    // Route configuration model
     public class RouteConfig
     {
-        public string Path { get; set; }             
-        public string ApiUri { get; set; }                             
-    }   
-
-    public class VersionedRoutesRoot
-    {
-        public List<RouteConfig> DefaultRoutes { get; set; }
-        public List<VersionedRoutes> Versions { get; set; }
+        public string Path { get; set; } = string.Empty;
+        public string ApiUri { get; set; } = string.Empty;
+        public string Version { get; set; } = string.Empty;
     }
 
-
-    public class VersionedRoutes
+    public class RoutesRoot
     {
-        public string Version { get; set; }
-        public List<RouteConfig> Routes { get; set; }
-    }
-
-    public static class RequestTranscriptHelpers
-    {
-        public static HttpRequestMessage ToHttpRequestMessage(this HttpRequest req, Uri path, HttpContent? content, string? contentType)
-            => new HttpRequestMessage()
-                .SetMethod(req)
-                .SetAbsoluteUri(path)
-                .SetHeaders(req)
-                .SetContent(content, contentType);
-
-        private static HttpRequestMessage SetAbsoluteUri(this HttpRequestMessage msg, Uri path)
-            => msg.Set(m => m.RequestUri = path);
-
-        private static HttpRequestMessage SetMethod(this HttpRequestMessage msg, HttpRequest req)
-            => msg.Set(m => m.Method = new HttpMethod(req.Method));
-
-        private static HttpRequestMessage SetHeaders(this HttpRequestMessage msg, HttpRequest req)
-        {
-            var excludedHeaders = new[] { "Host", "Content-Length", "Transfer-Encoding" };
-            foreach (var h in req.Headers)
-            {
-                if (!excludedHeaders.Contains(h.Key, StringComparer.OrdinalIgnoreCase))
-                {
-                    msg.Headers.TryAddWithoutValidation(h.Key, h.Value.AsEnumerable());
-                }
-            }
-            return msg;
-        }
-
-        private static HttpRequestMessage SetContent(this HttpRequestMessage msg, HttpContent? content, string? contentType = null)
-        {
-            if (content != null)
-            {
-                if (!string.IsNullOrEmpty(contentType))
-                    content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
-                msg.Content = content;
-            }
-            return msg;
-        }
-
-        private static HttpRequestMessage Set(this HttpRequestMessage msg, Action<HttpRequestMessage> config, bool applyIf = true)
-        {
-            if (applyIf)
-            {
-                config.Invoke(msg);
-            }
-            return msg;
-        }
+        public List<RouteConfig> Routes { get; set; } = [];
     }
 }

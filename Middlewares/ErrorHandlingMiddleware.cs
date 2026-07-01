@@ -1,4 +1,4 @@
-﻿using LP.GatewayAPI.Logging;
+using LP.GatewayAPI.Logging;
 using System.Net;
 using System.Text.Json;
 
@@ -7,11 +7,13 @@ namespace LP.GatewayAPI.Middlewares
     public class ErrorHandlingMiddleware
     {
         private readonly RequestDelegate _next;
-        private readonly IAPILogger _logger;
+        private readonly IAPILogger _apiLogger;
+        private readonly ILogger<ErrorHandlingMiddleware> _logger;
 
-        public ErrorHandlingMiddleware(RequestDelegate next, IAPILogger logger)
+        public ErrorHandlingMiddleware(RequestDelegate next, IAPILogger apiLogger, ILogger<ErrorHandlingMiddleware> logger)
         {
             _next = next;
+            _apiLogger = apiLogger;
             _logger = logger;
         }
 
@@ -19,26 +21,20 @@ namespace LP.GatewayAPI.Middlewares
         {
             try
             {
-                await _next(context); // proceed to the next middleware
+                await _next(context);
             }
             catch (Exception ex)
             {
-                _logger.Log(ex, ex.Message);
+                var correlationId = context.Items["CorrelationId"]?.ToString() ?? "-";
+                _logger.LogError(ex, "[{CorrelationId}] Unhandled exception", correlationId);
+                await _apiLogger.LogAsync(ex, ex.Message);
 
                 context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
                 context.Response.ContentType = "application/json";
 
-                var errorResponse = new
-                {
-                    status = context.Response.StatusCode,
-                    message = "Internal Server Error",
-                    detail = ex.Message
-                };
-
-                var json = JsonSerializer.Serialize(errorResponse);
-                await context.Response.WriteAsync(json);
+                var errorResponse = new { status = 500, message = "Internal Server Error", correlationId };
+                await context.Response.WriteAsync(JsonSerializer.Serialize(errorResponse));
             }
         }
     }
-
 }

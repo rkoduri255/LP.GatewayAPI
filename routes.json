@@ -1,40 +1,19 @@
 {
-  "versions": [
-    {
-      "version": "v1",
-      "routes": [
-        {
-          "path": "/self-study-reports",
-          "apiUri": "https://lp-qa-in.zeqo.com/api/selfstudy-reports"
-        },
-        {
-          "path": "/announcements",
-          "apiUri": "https://lp-qa-in.zeqo.com/api/announcements"
-        },
-        {
-          "path": "/learningplatformservice",
-          "apiUri": "https://lp-qa-in.zeqo.com/api/learningplatformservice"
-        }
-      ]
-    }
-  ],
-  "defaultRoutes": [
+  "routes": [
     {
       "path": "/self-study-reports",
-      "routes": [
-        {
-          "path": "/selfstudy-reports",
-          "apiUri": "https://lp-qa-in.zeqo.com/api/selfstudy-reports"
-        },
-        {
-          "path": "/announcements",
-          "apiUri": "https://lp-qa-in.zeqo.com/api/announcements"
-        },
-        {
-          "path": "/learningplatformservice",
-          "apiUri": "https://lp-qa-in.zeqo.com/api/learningplatformservice"
-        }
-      ]
+      "apiUri": "https://lp-qa-in.zeqo.com/api/selfstudy-reports",
+      "version": "v1"
+    },
+    {
+      "path": "/announcements",
+      "apiUri": "https://lp-qa-in.zeqo.com/api/announcements",
+      "version": "v1"
+    },
+    {
+      "path": "/learningplatformservice",
+      "apiUri": "https://lp-qa-in-2.zeqo.com/api/learningplatformservice",
+      "version": "v1"
     }
   ]
 }

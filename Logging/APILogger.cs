@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using System.Text;
 
@@ -6,55 +6,54 @@ namespace LP.GatewayAPI.Logging
 {
     public class APILogger : IAPILogger
     {
-        private const string LOCAL_ENVIRONMENT = "local";
-        public readonly APILoggerOptions _apiLoggerOptions;
+        private const string LocalEnvironment = "local";
 
-        public APILogger(IOptions<APILoggerOptions> options)
+        private readonly APILoggerOptions _options;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly ILogger<APILogger> _logger;
+
+        public APILogger(
+            IOptions<APILoggerOptions> options,
+            IHttpClientFactory httpClientFactory,
+            ILogger<APILogger> logger)
         {
-            _apiLoggerOptions = options.Value;
+            _options = options.Value;
+            _httpClientFactory = httpClientFactory;
+            _logger = logger;
         }
 
-
-        public void Log(Exception ex, string message)
+        public async Task LogAsync(Exception ex, string message)
         {
-            var environment = _apiLoggerOptions.Environment;
-            if (environment == null || environment.Equals(LOCAL_ENVIRONMENT, StringComparison.CurrentCultureIgnoreCase))
-            {
+            if (_options.Environment?.Equals(LocalEnvironment, StringComparison.OrdinalIgnoreCase) == true)
                 return;
-            }
 
-            Uri uri = new($"{_apiLoggerOptions.APIBaseURL}/add-log");
-            #pragma warning disable CS8604 // Possible null reference argument.
-            var logItem = CreateLogItem(message, ex?.ToString(), LogLevel.Error, environment);
-            #pragma warning restore CS8604 // Possible null reference argument.
-            var requestMesage = new HttpRequestMessage(HttpMethod.Post, uri);
-            var stringContent = new StringContent(JsonConvert.SerializeObject(logItem), Encoding.UTF8, "application/json");
-            requestMesage.Content = stringContent;
-            var client = new HttpClient();
-            client.SendAsync(requestMesage);
-
-        }
-
-        /// <summary>
-        /// Factory method for creating instance of LogItem object for errors
-        /// </summary>
-        /// <param name="message"></param>
-        /// <param name="error"></param>
-        /// <param name="logLevel"></param>
-        /// <returns></returns>
-        private LogItem CreateLogItem(string message, string error, LogLevel logLevel, string environment)
-        {
-            var logMessageEntry = new LogItem
+            try
             {
-                Type = logLevel.ToString(),
-                Message = message,
-                AppName = _apiLoggerOptions.AppName,
-                Environment = environment,
-                Project = _apiLoggerOptions.Project,
-                Error = error,
-                Timestamp = DateTime.Now
-            };
-            return logMessageEntry;
-        }        
+                var logItem = new LogItem
+                {
+                    Timestamp = DateTime.UtcNow,
+                    Type = "Error",
+                    Message = message,
+                    AppName = _options.AppName,
+                    Environment = _options.Environment,
+                    Project = _options.Project,
+                    Error = ex?.ToString()
+                };
+
+                var uri = new Uri($"{_options.APIBaseURL}/add-log");
+                var content = new StringContent(JsonConvert.SerializeObject(logItem), Encoding.UTF8, "application/json");
+                var request = new HttpRequestMessage(HttpMethod.Post, uri) { Content = content };
+
+                var client = _httpClientFactory.CreateClient();
+                var response = await client.SendAsync(request);
+
+                if (!response.IsSuccessStatusCode)
+                    _logger.LogWarning("Remote log endpoint returned {StatusCode}", (int)response.StatusCode);
+            }
+            catch (Exception logEx)
+            {
+                _logger.LogError(logEx, "Failed to send log entry to remote endpoint");
+            }
+        }
     }
 }
