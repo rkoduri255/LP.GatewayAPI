@@ -36,7 +36,7 @@ namespace LP.GatewayAPI.Middlewares
         // https://lp-qa-in-2.zeqo.com/api/gateway/lpservicesaddress/getstudentperformance. This
         // prefix is stripped before the service-key extraction below; if a reverse proxy in front
         // of this app already strips it, the StartsWith check below is simply a no-op.
-        private const string GatewayPathPrefix = "/api/gateway";
+        private const string GatewayPathPrefix = "api/lp.gateway.api";
 
         public async Task Invoke(HttpContext context)
         {
@@ -68,7 +68,12 @@ namespace LP.GatewayAPI.Middlewares
                 return;
             }
 
-            var targetUri = $"{resolved.Value.ApiUri}/{resolved.Value.Version}{remainingPath}{context.Request.QueryString}";
+            string targetUri;
+            if(string.IsNullOrWhiteSpace(resolved.Value.Version))
+             targetUri = $"{resolved.Value.ApiUri}/{resolved.Value.Version}{remainingPath}{context.Request.QueryString}";
+            else
+             targetUri = $"{resolved.Value.ApiUri}/{remainingPath}{context.Request.QueryString}";
+
             var method = context.Request.Method.ToUpper();
 
             HttpContent? httpContent = null;

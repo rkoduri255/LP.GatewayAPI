@@ -1,3 +1,5 @@
+using System;
+
 namespace LP.GatewayAPI.Middlewares
 {
     // Resolves the full base address (host + version) a request should hit for a given service
@@ -44,8 +46,7 @@ namespace LP.GatewayAPI.Middlewares
             if (service == null || string.IsNullOrEmpty(service.Url))
                 return null;
 
-            var version = string.IsNullOrEmpty(service.Version) ? FallbackVersion : service.Version;
-            return (service.Url.TrimEnd('/'), version);
+            return (service.Url,service.Version);          
         }
 
         private static AppRouteVersions? FindApp(IReadOnlyList<AppRouteVersions> apps, string? appName)
