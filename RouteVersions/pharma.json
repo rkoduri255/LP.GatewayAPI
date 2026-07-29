@@ -1,0 +1,66 @@
+{
+    "appName": "pharma",
+    "apiVersion": "v1",
+    "services": {
+        "NotebookServiceAddress": {
+            "url": "https://lp-qa-in-2.zeqo.com/api/notebook",
+            "version": "v1"
+        },
+        "SubscriptionApiAddress": {
+            "url": "https://subscription-service-qa-in.zeqo.com",
+            "version": "v1"
+        },
+        "FPApimAddress": {
+            "url": "https://lp-qa-in-2.zeqo.com/api/fp",
+            "version": "v1"
+        },
+        "LPApimAddress": {
+            "url": "https://lp-qa-in-2.zeqo.com/api",
+            "version": "v1"
+        },
+        "LPSupportServiceAddress": {
+            "url": "https://lp-qa-in-2.zeqo.com/api/SupportLPService",
+            "version": "v1"
+        },
+        "FPServiceAddress": {
+            "url": "https://lp-qa-in-2.zeqo.com/api/facultyportalservice",
+            "version": "v1"
+        },
+        "DiscountsServiceAddress": {
+            "url": "https://lp-qa-in-2.zeqo.com/api/discounts",
+            "version": "v1"
+        },
+        "PollingServiceAddress": {
+            "url": "https://lp-qa-in-2-polling-api.zeqo.com",
+            "version": "v1"
+        },
+        "ReportsServiceAddress": {
+            "url": "https://lp-qa-in-2.zeqo.com/api/reports",
+            "version": "v1"
+        },
+        "LPPartnersAddress": {
+            "url": "https://lp-qa-in-2.zeqo.com/api/partnerauth",
+            "version": "v1"
+        },
+        "UserPreferencesServiceAddress": {
+            "url": "https://lp-qa-in-2.zeqo.com/api/userpreferences",
+            "version": "v1"
+        },
+        "LPArticlesServiceAddress": {
+            "url": "https://lp-qa-in-2.zeqo.com/api/articles",
+            "version": "v1"
+        },
+        "SelfStudyReportsServiceAddress": {
+            "url": "https://lp-qa-in-2.zeqo.com/api/selfstudy-reports",
+            "version": "v1"
+        },
+        "AiAssistantServiceAddress": {
+            "url": "https://lp-ai-assistant-qa-in.zeqo.com",
+            "version": "v1"
+        },
+        "PromoBannerServiceAddress": {
+            "url": "https://lp-qa-in-2.zeqo.com/api/promo-banner",
+            "version": "v1"
+        }
+    }
+}

@@ -6,13 +6,15 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Include routes.json in configuration so IOptionsMonitor can hot-reload it
-builder.Configuration.AddJsonFile("routes.json", optional: false, reloadOnChange: true);
-
 // Bind configuration sections
 builder.Services.Configure<CryptographyOptions>(builder.Configuration.GetSection("Cryptography"));
 builder.Services.Configure<APILoggerOptions>(builder.Configuration.GetSection("Logging:Options"));
-builder.Services.Configure<RoutesRoot>(builder.Configuration);
+
+// RouteVersions/*.json (one file per app) is the gateway's only source of routing data (no
+// separate routes.json), keyed per calling app. Loaded and watched directly by
+// RouteVersionsRepository, not through IConfiguration.
+builder.Services.AddSingleton<RouteVersionsRepository>();
+builder.Services.AddSingleton<RouteVersionResolver>();
 
 var gatewayOptions = builder.Configuration.GetSection("Gateway").Get<GatewayOptions>() ?? new GatewayOptions();
 

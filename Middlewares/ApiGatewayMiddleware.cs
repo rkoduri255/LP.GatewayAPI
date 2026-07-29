@@ -1,8 +1,5 @@
 using LP.GatewayAPI.Logging;
-using Microsoft.Extensions.Options;
 using System.Net;
-using System.Text;
-using System.Text.Json;
 
 namespace LP.GatewayAPI.Middlewares
 {
@@ -16,47 +13,62 @@ namespace LP.GatewayAPI.Middlewares
         };
 
         private readonly RequestDelegate _next;
-        private readonly IOptionsMonitor<RoutesRoot> _routesMonitor;
+        private readonly RouteVersionResolver _routeVersionResolver;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IAPILogger _apiLogger;
         private readonly ILogger<ApiGatewayMiddleware> _logger;
-        private List<RouteConfig> _sortedRoutes = [];
 
         public ApiGatewayMiddleware(
             RequestDelegate next,
-            IOptionsMonitor<RoutesRoot> routesMonitor,
+            RouteVersionResolver routeVersionResolver,
             IHttpClientFactory httpClientFactory,
             IAPILogger apiLogger,
             ILogger<ApiGatewayMiddleware> logger)
         {
             _next = next;
-            _routesMonitor = routesMonitor;
+            _routeVersionResolver = routeVersionResolver;
             _httpClientFactory = httpClientFactory;
             _apiLogger = apiLogger;
             _logger = logger;
-
-            ApplyRoutes(routesMonitor.CurrentValue);
-            routesMonitor.OnChange(ApplyRoutes);
         }
+
+        // Public-facing requests arrive as /api/gateway/{serviceName}/{rest}, e.g. Angular calling
+        // https://lp-qa-in-2.zeqo.com/api/gateway/lpservicesaddress/getstudentperformance. This
+        // prefix is stripped before the service-key extraction below; if a reverse proxy in front
+        // of this app already strips it, the StartsWith check below is simply a no-op.
+        private const string GatewayPathPrefix = "/api/gateway";
 
         public async Task Invoke(HttpContext context)
         {
             var correlationId = context.Items["CorrelationId"]?.ToString() ?? "-";
-            var requestPath = context.Request.Path.Value?.ToLower();
+            var requestPath = context.Request.Path.Value?.ToLower() ?? string.Empty;
 
-            var route = _sortedRoutes.FirstOrDefault(r =>
-                requestPath?.StartsWith(r.Path, StringComparison.OrdinalIgnoreCase) == true);
+            if (requestPath.StartsWith(GatewayPathPrefix, StringComparison.OrdinalIgnoreCase))
+                requestPath = requestPath[GatewayPathPrefix.Length..];
 
-            if (route == null)
+            // The first remaining path segment IS the service key, e.g.
+            // "/lpservicesaddress/some/downstream/path" -> serviceKey "lpservicesaddress",
+            // remainingPath "/some/downstream/path". There is no separate routes.json anymore --
+            // route-versions.json is the only source of what services exist and where they go.
+            var trimmed = requestPath.Trim('/');
+            var splitIndex = trimmed.IndexOf('/');
+            var serviceKey = splitIndex < 0 ? trimmed : trimmed[..splitIndex];
+            var remainingPath = splitIndex < 0 ? string.Empty : trimmed[splitIndex..];
+
+            var appName = context.Request.Headers[RouteVersionResolver.AppNameHeader].FirstOrDefault();
+            var resolved = _routeVersionResolver.Resolve(appName, serviceKey);
+
+            if (resolved == null)
             {
-                _logger.LogWarning("[{CorrelationId}] No route for {Path}", correlationId, requestPath);
+                _logger.LogWarning(
+                    "[{CorrelationId}] No route for {Path} (service '{ServiceKey}', app '{AppName}')",
+                    correlationId, requestPath, serviceKey, appName ?? "-");
                 context.Response.StatusCode = (int)HttpStatusCode.NotFound;
                 await context.Response.WriteAsync("Route not found.");
                 return;
             }
 
-            var remainingPath = requestPath?[route.Path.Length..] ?? string.Empty;
-            var targetUri = $"{route.ApiUri}/{route.Version}{remainingPath}{context.Request.QueryString}";
+            var targetUri = $"{resolved.Value.ApiUri}/{resolved.Value.Version}{remainingPath}{context.Request.QueryString}";
             var method = context.Request.Method.ToUpper();
 
             HttpContent? httpContent = null;
@@ -124,36 +136,5 @@ namespace LP.GatewayAPI.Middlewares
 
             return message;
         }
-
-        private void ApplyRoutes(RoutesRoot routes)
-        {
-            _sortedRoutes = (routes.Routes ?? [])
-                .OrderByDescending(r => r.Path.Length)
-                .ToList();
-
-            ValidateRoutes(routes);
-        }
-
-        private void ValidateRoutes(RoutesRoot routes)
-        {
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var r in routes.Routes ?? [])
-            {
-                if (!seen.Add(r.Path))
-                    _logger.LogWarning("Ambiguous route detected: '{Path}' is defined more than once", r.Path);
-            }
-        }
-    }
-
-    public class RouteConfig
-    {
-        public string Path { get; set; } = string.Empty;
-        public string ApiUri { get; set; } = string.Empty;
-        public string Version { get; set; } = string.Empty;
-    }
-
-    public class RoutesRoot
-    {
-        public List<RouteConfig> Routes { get; set; } = [];
     }
 }
