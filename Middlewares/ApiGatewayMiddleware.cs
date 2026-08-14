@@ -55,24 +55,22 @@ namespace LP.GatewayAPI.Middlewares
             var serviceKey = splitIndex < 0 ? trimmed : trimmed[..splitIndex];
             var remainingPath = splitIndex < 0 ? string.Empty : trimmed[splitIndex..];
 
-            var appName = context.Request.Headers[RouteVersionResolver.AppNameHeader].FirstOrDefault();
-            var resolved = _routeVersionResolver.Resolve(appName, serviceKey);
+            var clientVersion = context.Request.Headers[RouteVersionResolver.ClientVersionHeader].FirstOrDefault();
+            var resolved = _routeVersionResolver.Resolve(clientVersion, serviceKey);
 
             if (resolved == null)
             {
                 _logger.LogWarning(
-                    "[{CorrelationId}] No route for {Path} (service '{ServiceKey}', app '{AppName}')",
-                    correlationId, requestPath, serviceKey, appName ?? "-");
+                    "[{CorrelationId}] No route for {Path} (service '{ServiceKey}', clientVersion '{ClientVersion}')",
+                    correlationId, requestPath, serviceKey, clientVersion ?? "-");
                 context.Response.StatusCode = (int)HttpStatusCode.NotFound;
                 await context.Response.WriteAsync("Route not found.");
                 return;
             }
 
-            string targetUri;
-            if(string.IsNullOrWhiteSpace(resolved.Value.Version))
-             targetUri = $"{resolved.Value.ApiUri}/{resolved.Value.Version}{remainingPath}{context.Request.QueryString}";
-            else
-             targetUri = $"{resolved.Value.ApiUri}/{remainingPath}{context.Request.QueryString}";
+            var targetUri = string.IsNullOrWhiteSpace(resolved.Value.Version)
+                ? $"{resolved.Value.ApiUri}{remainingPath}{context.Request.QueryString}"
+                : $"{resolved.Value.ApiUri}/{resolved.Value.Version}{remainingPath}{context.Request.QueryString}";
 
             var method = context.Request.Method.ToUpper();
 

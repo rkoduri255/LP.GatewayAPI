@@ -1,0 +1,152 @@
+{
+  "services": {
+    "NotebookServiceAddress": {
+      "url": "https://lp-qa-in-2.zeqo.com/api/notebook",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        },
+        {
+          "clientVersion": "2",
+          "apiVersion": "v2"
+        }
+      ]
+    },
+    "learningplatformservice": {
+      "url": "https://lp-qa-in-2.zeqo.com/api/learningplatformservice",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "SubscriptionApiAddress": {
+      "url": "https://subscription-service-qa-in.zeqo.com",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "FPApimAddress": {
+      "url": "https://lp-qa-in-2.zeqo.com/api/fp",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "LPApimAddress": {
+      "url": "https://lp-qa-in-2.zeqo.com/api",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "LPSupportServiceAddress": {
+      "url": "https://lp-qa-in-2.zeqo.com/api/SupportLPService",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "FPServiceAddress": {
+      "url": "https://lp-qa-in-2.zeqo.com/api/facultyportalservice",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "DiscountsServiceAddress": {
+      "url": "https://lp-qa-in-2.zeqo.com/api/discounts",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "PollingServiceAddress": {
+      "url": "https://lp-qa-in-2-polling-api.zeqo.com",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "ReportsServiceAddress": {
+      "url": "https://lp-qa-in-2.zeqo.com/api/reports",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "LPPartnersAddress": {
+      "url": "https://lp-qa-in-2.zeqo.com/api/partnerauth",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "UserPreferencesServiceAddress": {
+      "url": "https://lp-qa-in-2.zeqo.com/api/userpreferences",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "LPArticlesServiceAddress": {
+      "url": "https://lp-qa-in-2.zeqo.com/api/articles",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "SelfStudyReportsServiceAddress": {
+      "url": "https://lp-qa-in-2.zeqo.com/api/selfstudy-reports",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "AiAssistantServiceAddress": {
+      "url": "https://lp-ai-assistant-qa-in.zeqo.com",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    },
+    "PromoBannerServiceAddress": {
+      "url": "https://lp-qa-in-2.zeqo.com/api/promo-banner",
+      "versionMap": [
+        {
+          "clientVersion": "1",
+          "apiVersion": "v1"
+        }
+      ]
+    }
+  }
+}

@@ -1,7 +1,6 @@
 using LP.GatewayAPI.Logging;
 using LP.GatewayAPI.Middlewares;
 using LP.GatewayAPI.Utilities;
-using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,8 +9,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<CryptographyOptions>(builder.Configuration.GetSection("Cryptography"));
 builder.Services.Configure<APILoggerOptions>(builder.Configuration.GetSection("Logging:Options"));
 
-// RouteVersions/*.json (one file per app) is the gateway's only source of routing data (no
-// separate routes.json), keyed per calling app. Loaded and watched directly by
+// RouteVersions/services.json (one shared file, apiVersion blocks v1/v2/v3) is the gateway's
+// only source of routing data (no separate routes.json). Loaded and watched directly by
 // RouteVersionsRepository, not through IConfiguration.
 builder.Services.AddSingleton<RouteVersionsRepository>();
 builder.Services.AddSingleton<RouteVersionResolver>();

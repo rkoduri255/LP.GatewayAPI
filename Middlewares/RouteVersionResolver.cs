@@ -3,21 +3,21 @@ using System;
 namespace LP.GatewayAPI.Middlewares
 {
     // Resolves the full base address (host + version) a request should hit for a given service
-    // key, based on the calling app's declared name -- RouteVersions/*.json (one file per app) is
-    // this gateway's only source of routing data now, keyed per app, not per route.
+    // key, based on the caller's declared clientVersion -- RouteVersions/services.json (one
+    // shared file) is this gateway's only source of routing data.
     //
-    // Resolution order for a given (appName, serviceKey):
-    //   1. That app's own entry for this service, if the app is found and has it.
-    //   2. A sentinel app literally named "default", if a file carries this service under that
-    //      name -- this is the fallback for a missing/unrecognized appName header. There is no
-    //      such file today, so until one is added, an unmatched request 404s rather than
-    //      silently resolving somewhere.
-    //   3. Otherwise null -- "no route for this request."
+    // Each service tracks its own clientVersion -> apiVersion map, independent of every other
+    // service. Resolution for a given (clientVersion, serviceKey):
+    //   1. Look up the service by key. No match -> null ("no route for this request").
+    //   2. Within that service's versionMap, find the entry with the highest clientVersion that
+    //      is <= the caller's clientVersion -- i.e. "the most recent mapping known as of the
+    //      client version making the request."
+    //   3. If no such entry exists (empty map, missing/non-numeric clientVersion, or every mapped
+    //      clientVersion is higher than what was requested), resolve with no version segment at
+    //      all -- the caller hits the service's bare url.
     public class RouteVersionResolver
     {
-        public const string AppNameHeader = "appName";
-        public const string DefaultAppName = "default";
-        private const string FallbackVersion = "v1";
+        public const string ClientVersionHeader = "clientVersion";
 
         private readonly RouteVersionsRepository _repository;
 
@@ -26,54 +26,61 @@ namespace LP.GatewayAPI.Middlewares
             _repository = repository;
         }
 
-        public (string ApiUri, string Version)? Resolve(string? appName, string? serviceKey)
+        public (string ApiUri, string Version)? Resolve(string? clientVersion, string? serviceKey)
         {
             if (string.IsNullOrEmpty(serviceKey))
                 return null;
 
-            var apps = _repository.Apps;
-            if (apps.Count == 0)
+            var services = _repository.Services;
+            if (!services.TryGetValue(serviceKey, out var service) || string.IsNullOrEmpty(service.Url))
                 return null;
 
-            var app = FindApp(apps, appName) ?? FindApp(apps, DefaultAppName);
-            if (app?.Services == null)
-                return null;
-
-            var match = app.Services.FirstOrDefault(kvp =>
-                string.Equals(kvp.Key, serviceKey, StringComparison.OrdinalIgnoreCase));
-            var service = match.Value;
-
-            if (service == null || string.IsNullOrEmpty(service.Url))
-                return null;
-
-            return (service.Url,service.Version);          
+            var apiVersion = ResolveApiVersion(service.VersionMap, clientVersion);
+            return (service.Url, apiVersion ?? string.Empty);
         }
 
-        private static AppRouteVersions? FindApp(IReadOnlyList<AppRouteVersions> apps, string? appName)
+        private static string? ResolveApiVersion(List<VersionMapEntry>? versionMap, string? clientVersion)
         {
-            if (string.IsNullOrEmpty(appName))
+            if (versionMap == null || versionMap.Count == 0)
                 return null;
 
-            return apps.FirstOrDefault(a => string.Equals(a.AppName, appName, StringComparison.OrdinalIgnoreCase));
+            var requested = ParseVersion(clientVersion);
+            if (requested == null)
+                return null;
+
+            VersionMapEntry? best = null;
+            int bestVersion = int.MinValue;
+
+            foreach (var entry in versionMap)
+            {
+                var entryVersion = ParseVersion(entry.ClientVersion);
+                if (entryVersion == null || entryVersion > requested)
+                    continue;
+
+                if (best == null || entryVersion > bestVersion)
+                {
+                    best = entry;
+                    bestVersion = entryVersion.Value;
+                }
+            }
+
+            return best?.ApiVersion;
         }
+
+        private static int? ParseVersion(string? value) =>
+            int.TryParse(value, out var parsed) ? parsed : null;
     }
 
-    // Deserialized from RouteVersions/{appName}.json by RouteVersionsRepository.
-    public class AppRouteVersions
-    {
-        public string AppName { get; set; } = string.Empty;
-
-        // Descriptive/tracking only -- not used to resolve a request.
-        public string ApiVersion { get; set; } = string.Empty;
-
-        // Key = service key (matches the route's first path segment, e.g. "LPServicesAddress"
-        // for a request to "/lpservicesaddress/..."), value = that service's full base address.
-        public Dictionary<string, ServiceOverride> Services { get; set; } = [];
-    }
-
-    public class ServiceOverride
+    // Deserialized from RouteVersions/services.json by RouteVersionsRepository.
+    public class ServiceRoute
     {
         public string Url { get; set; } = string.Empty;
-        public string Version { get; set; } = string.Empty;
+        public List<VersionMapEntry> VersionMap { get; set; } = [];
+    }
+
+    public class VersionMapEntry
+    {
+        public string ClientVersion { get; set; } = string.Empty;
+        public string ApiVersion { get; set; } = string.Empty;
     }
 }
